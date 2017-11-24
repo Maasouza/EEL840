@@ -1,7 +1,11 @@
 pragma solidity ^0.4.2;
 
+import "strings.sol";
+
 
 contract Mark1 {
+
+    using strings for *;
     
     string public name;
     string public symbol;
@@ -29,7 +33,7 @@ contract Mark1 {
     // This generates a public event on the blockchain that will notify clients
     event Transfer(address indexed from, address indexed to, uint256 value);
     event AskBack(address indexed from, address indexed to, uint256 value);
-    event CreateProposal(string name, string description, string[] options, uint ttl);
+    event CreateProposal(string name, string description, string options, uint ttl);
     event Vote(address indexed voter, uint proposal, string option, uint value);
 
     /**
@@ -54,20 +58,27 @@ contract Mark1 {
      *
      * 
      */
-    function createProposal(string name, string description, string[] options, uint ttl) public {
+    function createProposal(string name, string description, string options, uint ttl) public {
         require(proposals[initID].exists);
-        Proposal new_proposal;
+        Proposal newProposal;
         
-        new_proposal.name = name;
-        new_proposal.description = description;
-        new_proposal.options = options;
-        new_proposal.exists = true;
-        new_proposal.activeUntil = now + ttl;
-        proposals[initID] = new_proposal;
+        var opts = options.toSlice();
+        var delim = ",".toSlice();
+        var parts = new string[](opts.count(delim));
+        for (uint i = 0; i < parts.length; i++) {
+            parts[i] = opts.split(delim).toString();
+        }
+
+        newProposal.name = name;
+        newProposal.description = description;
+        newProposal.options = parts;
+        newProposal.exists = true;
+        newProposal.activeUntil = now + ttl;
+        proposals[initID] = newProposal;
         initID++;
 
-        CreateProposal(name,description,options,ttl);
-        //?????? assert(proposals[initID-1].name ==  new_proposal.name);
+        CreateProposal(name, description, options, ttl);
+        //?????? assert(proposals[initID-1].name ==  newProposal.name);
     }
 
     function vote(uint proposal, uint option, uint value) public {
@@ -82,10 +93,9 @@ contract Mark1 {
         proposals[proposal].votes[selectedOption] += value;
         voters[msg.sender].votingWeight -= value;
 
-        Vote(msg.sender,proposal,selectedOption,value);
+        Vote(msg.sender, proposal, selectedOption, value);
 
         assert(previousBalances == voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption]);
-
     }
     
     /**
