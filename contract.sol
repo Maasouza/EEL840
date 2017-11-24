@@ -1,4 +1,3 @@
-
 pragma solidity ^0.4.2;
 
 
@@ -9,65 +8,101 @@ contract Mark1 {
     uint256 public totalWeight;
 
     struct Voter {
-        uint256 votingWeight;
-        mapping (address => uint) delegatesWeight;
-        address[] delegates;
+        uint256 votingWeight; // peso do votante. análogo a balance em $
+        mapping (address => uint) delegatesWeight; // para quem você delegou votos e quantos votos foram delegados
+        address[] delegates; // array de para quem você delegou votos
     }
 
-    mapping (address => Voter) private voters;
+    mapping (address => Voter) private voters; // associação entre contas e eleitores
 
     // This generates a public event on the blockchain that will notify clients
     event Transfer(address indexed from, address indexed to, uint256 value);
     event AskBack(address indexed from, address indexed to, uint256 value);
 
-
+    /**
+     * Constructor function
+     *
+     * Initializes contract with initial supply tokens to the creator of the contract
+     */
     function Mark1 (
-        uint256 initialWeight,
-        string tokenName,
-        string tokenSymbol
-    ) public 
-    {
+        uint256 initialWeight, // peso total da rede
+        string tokenName, // nome do token/voto
+        string tokenSymbol // símbolo do token
+    ) public {
         totalWeight = initialWeight;
         voters[msg.sender].votingWeight = totalWeight;
         name = tokenName;
         symbol = tokenSymbol;
     }
     
-    function _transfer(address _from, address _to, uint256 _value) internal 
-    {
+    /**
+     *  isso pode ou não funcionar
+     *  supostamente dá 1 voto a qualquer pessoa que pedir
+     *  ideia é implementar autenticação nessa função. 1 eleitor = 1 voto
+     */
+    function faucet() public {
+        voters[msg.sender].votingWeight += 1;
+        totalWeight += 1;
+    }
 
-        require (_to != 0x0);
-        require (voters[_from].votingWeight >= _value);
-        require (voters[_to].votingWeight + _value > voters[_to].votingWeight);
+    function min(uint a, uint b) public pure returns (uint) {
+        return (a < b) ? a : b;
+    }
+
+    /**
+     * Transfer tokens
+     *
+     * Send `_value` tokens to `_to` from your account
+     *
+     * @param _to The address of the recipient
+     * @param _value the amount to send
+     */ 
+    function transfer(address _to, uint256 _value) public {
+        _transfer(msg.sender, _to, _value);
+    }
+
+    /**
+     * Internal transfer, only can be called by this contract
+     */
+    function _transfer(address _from, address _to, uint256 _value) internal {
+
+        require(_to != 0x0);
+        require(voters[_from].votingWeight >= _value);
+        require(voters[_to].votingWeight + _value > voters[_to].votingWeight);
 
         uint256 previousBalances = voters[_from].votingWeight + voters[_to].votingWeight;
-
+        // 
         voters[_from].votingWeight -= _value;
         voters[_to].votingWeight += _value;
-        
-        if (voters[_from].delegatesWeight[_to].isValue)
-        {
+
+       // guarda para quem o usuário delegou seus votos e quantos votos foram delegados 
+        if (voters[_from].delegatesWeight[_to] != 0) {
             voters[_from].delegatesWeight[_to] += _value;
-        }
-        else
-        {
+        } else {
             voters[_from].delegatesWeight[_to] = _value;
             voters[_from].delegates.push(_to);
         }
 
-        Transfer(_from, _to, _value );
+        Transfer(_from, _to, _value);
 
         assert(voters[_from].votingWeight + voters[_to].votingWeight == previousBalances);
-        assert(voters[_from].delegatesWeight[_to].isValue);
+        assert(voters[_from].delegatesWeight[_to] != 0);
 
     }
 
-    function _transferBack(address _from, address _to, uint256 _value) internal 
-    {
+   /**
+     * Transfer Back
+     *
+     * Efetuará a transação chamada pelo AskBack
+     *
+     * @param _to The address of the recipient
+     * @param _value the amount to send
+     */ 
+    function _transferBack(address _from, address _to, uint256 _value) internal {
 
-        require (_to != 0x0);
-        require (voters[_from].votingWeight >= _value);
-        require (voters[_to].votingWeight + _value > voters[_to].votingWeight);
+        require(_to != 0x0);
+        require(voters[_from].votingWeight >= _value);
+        require(voters[_to].votingWeight + _value > voters[_to].votingWeight);
 
         uint256 previousBalances = voters[_from].votingWeight + voters[_to].votingWeight;
 
@@ -75,14 +110,11 @@ contract Mark1 {
         voters[_to].votingWeight += _value;
         voters[_to].delegatesWeight[_from] -= _value;
 
-        if(voters[_to].delegatesWeight[_from] == 0)
-        {
+        if (voters[_to].delegatesWeight[_from] == 0) {
             delete voters[_to].delegatesWeight[_from];
             
-            for(uint i = 0 ; i < voters[_to].delegates.length ; i++)
-            {
-                if( voters[_to].delegates[i] == _from )
-                {
+            for (uint i = 0; i < voters[_to].delegates.length; i++) {
+                if (voters[_to].delegates[i] == _from) {
                     delete voters[_to].delegates[i];
                     break;
                 }
@@ -90,34 +122,39 @@ contract Mark1 {
 
         }
 
-        Transfer(_from, _to, _value );
+        Transfer(_from, _to, _value);
 
         assert(voters[_from].votingWeight + voters[_to].votingWeight == previousBalances);
-        assert(!voters[_to].delegatesWeight[_from].isValue);
+        assert(voters[_to].delegatesWeight[_from] == 0);
 
     }
 
-    
-
-    function _askBack(address _from, address _to, uint256 _value) internal
-    {
+   /**
+    * Ask Back
+    * Pede a um delegado que devolva os votos que foram emprestados a ele ou 
+    * devolve os votos enquanto a votação está ativa.
+    *
+    * @param _from Quem está pedindo os votos de volta
+    * @param _to Para quem os votos foram emprestados
+    * @param _value Quantos votos estão sendo pedidos 
+    */
+    function _askBack(address _from, address _to, uint256 _value) internal {
         require(_to != 0x0);
-        require(voters[_from].delegatesWeight[_to].isValue);
+        require(voters[_from].delegatesWeight[_to] != 0);
         require(voters[_from].delegatesWeight[_to] >= _value);
 
-        if (voters[_to].votingWeight < _value )
-        {
-            for (uint i = 0 ; i < voters[_to].delegates.length ; i++)
-            {
+        if (voters[_to].votingWeight < _value) {
+           /**
+            * Se o delegado não tem os votos necessários para devolver aqueles que lhes foram 
+            * emprestados, ele precisa pedir devolta votos aos seus próprios delegados.
+            */
+            for (uint i = 0; i < voters[_to].delegates.length; i++) {
                 uint placeholder = voters[_to].votingWeight;
-                address new_to = voters[_to].delegates[i];
-                uint ask_value = min(_value - placeholder, voters[_to].delegatesWeight[new_to]);
-                _askBack(_to, new_to, ask_value);
+                address newTo = voters[_to].delegates[i];
+                uint askValue = min(_value - placeholder, voters[_to].delegatesWeight[newTo]);
+                _askBack(_to, newTo, askValue);
                 placeholder = voters[_to].votingWeight;
-                if(_value == placeholder)
-                {
-                    break;
-                }
+                if (_value == placeholder) { break; }
             }
 
             //condição de ja ter votado
@@ -125,9 +162,6 @@ contract Mark1 {
 
     }
 
-    function transfer(address _to, uint256 _value) public 
-    {
-        _transfer(msg.sender, _to, _value);
-    }
+
 
 }
