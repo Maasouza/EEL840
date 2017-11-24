@@ -6,6 +6,7 @@ contract Mark1 {
     string public name;
     string public symbol;
     uint256 public totalWeight;
+    uint public initID;
 
     struct Voter {
         uint256 votingWeight; // peso do votante. análogo a balance em $
@@ -13,11 +14,23 @@ contract Mark1 {
         address[] delegates; // array de para quem você delegou votos
     }
 
+    struct Proposal {
+        string name;
+        string description;
+        string[] options;
+        bool exists;
+        uint activeUntil;
+        mapping (string => uint) votes;
+    }
+
     mapping (address => Voter) private voters; // associação entre contas e eleitores
+    mapping (uint => Proposal) private proposals;
 
     // This generates a public event on the blockchain that will notify clients
     event Transfer(address indexed from, address indexed to, uint256 value);
     event AskBack(address indexed from, address indexed to, uint256 value);
+    event CreateProposal(string name, string description, string[] options, uint ttl);
+    event Vote(address indexed voter, uint proposal, string option, uint value);
 
     /**
      * Constructor function
@@ -33,6 +46,46 @@ contract Mark1 {
         voters[msg.sender].votingWeight = totalWeight;
         name = tokenName;
         symbol = tokenSymbol;
+        initID = 0;
+    }
+
+    /**
+     * Function to create a new proposal
+     *
+     * 
+     */
+    function createProposal(string name, string description, string[] options, uint ttl) public {
+        require(proposals[initID].exists);
+        Proposal new_proposal;
+        
+        new_proposal.name = name;
+        new_proposal.description = description;
+        new_proposal.options = options;
+        new_proposal.exists = true;
+        new_proposal.activeUntil = now + ttl;
+        proposals[initID] = new_proposal;
+        initID++;
+
+        CreateProposal(name,description,options,ttl);
+        //?????? assert(proposals[initID-1].name ==  new_proposal.name);
+    }
+
+    function vote(uint proposal, uint option, uint value) public {
+        require(voters[msg.sender].votingWeight >= value);
+        require(proposals[proposal].exists);
+        require(proposals[proposal].activeUntil <= now);
+        require(proposals[proposal].options.length > option);
+
+        string selectedOption =  proposals[proposal].options[option];
+        uint previousBalances = voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption];
+
+        proposals[proposal].votes[selectedOption] += value;
+        voters[msg.sender].votingWeight -= value;
+
+        Vote(msg.sender,proposal,selectedOption,value);
+
+        assert(previousBalances == voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption]);
+
     }
     
     /**
