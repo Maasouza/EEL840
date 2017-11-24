@@ -16,6 +16,7 @@ contract Mark1 {
         uint256 votingWeight; // peso do votante. análogo a balance em $
         mapping (address => uint) delegatesWeight; // para quem você delegou votos e quantos votos foram delegados
         address[] delegates; // array de para quem você delegou votos
+        mapping (string => uint) voted;
     }
 
     struct Proposal {
@@ -92,8 +93,24 @@ contract Mark1 {
 
         proposals[proposal].votes[selectedOption] += value;
         voters[msg.sender].votingWeight -= value;
+        voters[msg.sender].voted[selectedOption] += value;
 
         Vote(msg.sender, proposal, selectedOption, value);
+
+        assert(previousBalances == voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption]);
+    }
+
+    function undoVote(uint proposal, uint option, uint value) public {
+        require(proposals[proposal].exists);
+        string selectedOption =  proposals[proposal].options[option];
+        require(proposals[proposal].votes[selectedOption] >= value);
+        require(voters[msg.sender].voted[selectedOption] >= value);
+
+        uint previousBalances = voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption];
+
+        proposals[proposal].votes[selectedOption] -= value;
+        voters[msg.sender].voted[selectedOption] -= value;
+        voters[msg.sender].votingWeight += value;
 
         assert(previousBalances == voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption]);
     }
@@ -138,7 +155,7 @@ contract Mark1 {
         voters[_from].votingWeight -= _value;
         voters[_to].votingWeight += _value;
 
-       // guarda para quem o usuário delegou seus votos e quantos votos foram delegados 
+        // guarda para quem o usuário delegou seus votos e quantos votos foram delegados 
         if (voters[_from].delegatesWeight[_to] != 0) {
             voters[_from].delegatesWeight[_to] += _value;
         } else {
@@ -160,7 +177,7 @@ contract Mark1 {
      *
      * @param _to The address of the recipient
      * @param _value the amount to send
-     */ 
+    */ 
     function _transferBack(address _from, address _to, uint256 _value) internal {
 
         require(_to != 0x0);
@@ -211,20 +228,33 @@ contract Mark1 {
             * Se o delegado não tem os votos necessários para devolver aqueles que lhes foram 
             * emprestados, ele precisa pedir devolta votos aos seus próprios delegados.
             */
+            bool need = true;
             for (uint i = 0; i < voters[_to].delegates.length; i++) {
                 uint placeholder = voters[_to].votingWeight;
                 address newTo = voters[_to].delegates[i];
                 uint askValue = min(_value - placeholder, voters[_to].delegatesWeight[newTo]);
                 _askBack(_to, newTo, askValue);
                 placeholder = voters[_to].votingWeight;
-                if (_value == placeholder) { break; }
+                if (_value == placeholder) { need = false; break; }
+            
             }
-
             //condição de ja ter votado
-        }   
+            //if (voters[_to].votingWeight < _value) {
+                //uint needed = _value - voters[_to].votingWeight;
+            uint proposal = initID - 1;
+            while ((_value - voters[_to].votingWeight != 0) && need) {
+                for (uint id = 0; id < proposals[proposal].options.length; id++) {
+                    string selectedOption = proposals[proposal].options[id];
+                    if (voters[_from].voted[selectedOption] >= 1) {
+                        undoVote(proposal, id, 1);
+                    }
+                }
+            }
+            //}             
+        }
+
+        _transferBack(_to, _from, _value);
 
     }
-
-
 
 }
