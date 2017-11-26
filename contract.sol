@@ -2,7 +2,6 @@ pragma solidity ^0.4.2;
 
 import "strings.sol";
 
-
 contract Mark1 {
 
     using strings for *;
@@ -46,7 +45,8 @@ contract Mark1 {
         uint256 initialWeight, // peso total da rede
         string tokenName, // nome do token/voto
         string tokenSymbol // símbolo do token
-    ) public {
+    ) public 
+    {
         totalWeight = initialWeight;
         voters[msg.sender].votingWeight = totalWeight;
         name = tokenName;
@@ -79,7 +79,7 @@ contract Mark1 {
         initID++;
 
         CreateProposal(name, description, options, ttl);
-        //?????? assert(proposals[initID-1].name ==  newProposal.name);
+        assert(proposals[initID-1].exists);
     }
 
     function vote(uint proposal, uint option, uint value) public {
@@ -120,7 +120,7 @@ contract Mark1 {
      *  supostamente dá 1 voto a qualquer pessoa que pedir
      *  ideia é implementar autenticação nessa função. 1 eleitor = 1 voto
      */
-    function faucet() public {
+    function faucet() internal {
         voters[msg.sender].votingWeight += 1;
         totalWeight += 1;
     }
@@ -255,6 +255,10 @@ contract Mark1 {
 
         _transferBack(_to, _from, _value);
 
+    }
+
+    function askBack(address _to, uint256 _value) public {
+        _askBack(msg.sender, _to, _value);
     }
 
 }
