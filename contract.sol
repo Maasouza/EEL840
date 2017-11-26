@@ -1,14 +1,14 @@
 pragma solidity ^0.4.2;
 
+
 contract Mark1 {
-    
+
     string public name;
     string public symbol;
     uint256 public totalWeight;
     uint public initID;
 
     struct Voter {
-        uint256 votingWeight; // peso do votante. análogo a balance em $
         mapping (address => uint) delegatesWeight; // para quem você delegou votos e quantos votos foram delegados
         address[] delegates; // array de para quem você delegou votos
         mapping (string => uint) voted;
@@ -24,13 +24,15 @@ contract Mark1 {
     }
 
     mapping (address => Voter) private voters; // associação entre contas e eleitores
+    mapping (address => uint256) private balanceOf; 
     mapping (uint => Proposal) private proposals;
 
     // This generates a public event on the blockchain that will notify clients
     event Transfer(address indexed from, address indexed to, uint256 value);
     event AskBack(address indexed from, address indexed to, uint256 value);
-    event CreateProposal(string name, string description, string options, uint ttl);
+    event CreateProposal(string name, string description, string options, uint ttl, uint initID);
     event Vote(address indexed voter, uint proposal, string option, uint value);
+    event Winner(string option);
 
     /**
      * Constructor function
@@ -44,7 +46,7 @@ contract Mark1 {
     ) public 
     {
         totalWeight = initialWeight;
-        voters[msg.sender].votingWeight = totalWeight;
+        balanceOf[msg.sender] = totalWeight;
         name = tokenName;
         symbol = tokenSymbol;
         initID = 0;
@@ -53,69 +55,72 @@ contract Mark1 {
     /**
      * Function to create a new proposal
      *
-     * 
+     * @param _name Nome da proposta
+     * @param _description Descrição da proposta
+     * @param _min Tempo (em minutos) que a proposta ficará ativa
      */
-    function createProposal(string _name, string _description, uint _ttl) public {
-        require(proposals[initID].exists);
+    function createProposal(string _name, string _description, uint _min) public {
+        require(!proposals[initID].exists);
         Proposal memory newProposal;
 
         newProposal.name = _name;
         newProposal.description = _description;
-        newProposal.options = ["sim", "nao"];
+        newProposal.options = ["nao", "sim"];
         newProposal.exists = true;
-        newProposal.activeUntil = now + _ttl;
+        newProposal.activeUntil = now + 60*_min;
         proposals[initID] = newProposal;
+        CreateProposal(_name, _description, "nao,sim", _min, initID);
         initID++;
 
-        CreateProposal(_name, _description, "sim,nao", _ttl);
         assert(proposals[initID-1].exists);
     }
 
-    function vote(uint proposal, uint option, uint value) public {
-        require(voters[msg.sender].votingWeight >= value);
-        require(proposals[proposal].exists);
-        require(proposals[proposal].activeUntil <= now);
-        require(proposals[proposal].options.length > option);
+    function proposalResult(uint propID) public {
+        require(proposals[propID].exists);
+        //require(proposals[propID].activeUntil < now);
 
-        string storage selectedOption =  proposals[proposal].options[option];
-        uint previousBalances = voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption];
+        Winner(proposals[propID].name);
+        if (proposals[propID].votes["sim"] > proposals[propID].votes["nao"]) {
+            Winner("sim");
+        } else {
+            Winner("nao");
+        }
+    }
+
+    function vote(uint proposal, bool option, uint value) public {
+        require(balanceOf[msg.sender] >= value);
+        require(proposals[proposal].exists);
+        require(proposals[proposal].activeUntil >= now);
+
+        string storage selectedOption =  proposals[proposal].options[conversor(option)];
+        uint previousBalances = balanceOf[msg.sender] + proposals[proposal].votes[selectedOption];
 
         proposals[proposal].votes[selectedOption] += value;
-        voters[msg.sender].votingWeight -= value;
+        balanceOf[msg.sender] -= value;
         voters[msg.sender].voted[selectedOption] += value;
 
         Vote(msg.sender, proposal, selectedOption, value);
 
-        assert(previousBalances == voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption]);
+        assert(previousBalances == balanceOf[msg.sender] + proposals[proposal].votes[selectedOption]);
     }
 
-    function undoVote(uint proposal, uint option, uint value) public {
+    function undoVote(uint proposal, bool option, uint value) public {
         require(proposals[proposal].exists);
-        string storage selectedOption =  proposals[proposal].options[option];
+        string storage selectedOption =  proposals[proposal].options[conversor(option)];
         require(proposals[proposal].votes[selectedOption] >= value);
         require(voters[msg.sender].voted[selectedOption] >= value);
 
-        uint previousBalances = voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption];
+        uint previousBalances = balanceOf[msg.sender] + proposals[proposal].votes[selectedOption];
 
         proposals[proposal].votes[selectedOption] -= value;
         voters[msg.sender].voted[selectedOption] -= value;
-        voters[msg.sender].votingWeight += value;
+        balanceOf[msg.sender] += value;
 
-        assert(previousBalances == voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption]);
+        assert(previousBalances == balanceOf[msg.sender] + proposals[proposal].votes[selectedOption]);
     }
     
-    /**
-     *  isso pode ou não funcionar
-     *  supostamente dá 1 voto a qualquer pessoa que pedir
-     *  ideia é implementar autenticação nessa função. 1 eleitor = 1 voto
-     */
-    function faucet() internal {
-        voters[msg.sender].votingWeight += 1;
-        totalWeight += 1;
-    }
-
-    function min(uint a, uint b) public pure returns (uint) {
-        return (a < b) ? a : b;
+    function authenticate() public {
+        faucet(msg.sender);
     }
 
     /**
@@ -130,19 +135,40 @@ contract Mark1 {
         _transfer(msg.sender, _to, _value);
     }
 
+    function askBack(address _to, uint256 _value) public {
+        _askBack(msg.sender, _to, _value);
+    }
+
+    /**
+     *  dá 1 voto a qualquer pessoa que pedir
+     *  ideia é implementar autenticação nessa função. 1 eleitor = 1 voto
+     */
+    function faucet(address _user) internal {
+        balanceOf[_user] += 1;
+        totalWeight += 1;
+    }
+
+    function conversor(bool option) internal pure returns (uint converted) {
+        return (option) ? 1 : 0;
+    }
+
+    function min(uint a, uint b) internal pure returns (uint) {
+        return (a < b) ? a : b;
+    }
+
     /**
      * Internal transfer, only can be called by this contract
      */
     function _transfer(address _from, address _to, uint256 _value) internal {
 
         require(_to != 0x0);
-        require(voters[_from].votingWeight >= _value);
-        require(voters[_to].votingWeight + _value > voters[_to].votingWeight);
+        require(balanceOf[_from] >= _value);
+        require(balanceOf[_to] + _value > balanceOf[_to]);
 
-        uint256 previousBalances = voters[_from].votingWeight + voters[_to].votingWeight;
+        uint256 previousBalances = balanceOf[_from] + balanceOf[_to];
         // 
-        voters[_from].votingWeight -= _value;
-        voters[_to].votingWeight += _value;
+        balanceOf[_from] -= _value;
+        balanceOf[_to] += _value;
 
         // guarda para quem o usuário delegou seus votos e quantos votos foram delegados 
         if (voters[_from].delegatesWeight[_to] != 0) {
@@ -154,7 +180,7 @@ contract Mark1 {
 
         Transfer(_from, _to, _value);
 
-        assert(voters[_from].votingWeight + voters[_to].votingWeight == previousBalances);
+        assert(balanceOf[_from] + balanceOf[_to] == previousBalances);
         assert(voters[_from].delegatesWeight[_to] != 0);
 
     }
@@ -170,13 +196,13 @@ contract Mark1 {
     function _transferBack(address _from, address _to, uint256 _value) internal {
 
         require(_to != 0x0);
-        require(voters[_from].votingWeight >= _value);
-        require(voters[_to].votingWeight + _value > voters[_to].votingWeight);
+        require(balanceOf[_from] >= _value);
+        require(balanceOf[_to] + _value > balanceOf[_to]);
 
-        uint256 previousBalances = voters[_from].votingWeight + voters[_to].votingWeight;
+        uint256 previousBalances = balanceOf[_from] + balanceOf[_to];
 
-        voters[_from].votingWeight -= _value;
-        voters[_to].votingWeight += _value;
+        balanceOf[_from] -= _value;
+        balanceOf[_to] += _value;
         voters[_to].delegatesWeight[_from] -= _value;
 
         if (voters[_to].delegatesWeight[_from] == 0) {
@@ -193,7 +219,7 @@ contract Mark1 {
 
         Transfer(_from, _to, _value);
 
-        assert(voters[_from].votingWeight + voters[_to].votingWeight == previousBalances);
+        assert(balanceOf[_from] + balanceOf[_to] == previousBalances);
         assert(voters[_to].delegatesWeight[_from] == 0);
 
     }
@@ -212,30 +238,31 @@ contract Mark1 {
         require(voters[_from].delegatesWeight[_to] != 0);
         require(voters[_from].delegatesWeight[_to] >= _value);
 
-        if (voters[_to].votingWeight < _value) {
+        if (balanceOf[_to] < _value) {
            /**
             * Se o delegado não tem os votos necessários para devolver aqueles que lhes foram 
             * emprestados, ele precisa pedir devolta votos aos seus próprios delegados.
             */
             bool need = true;
             for (uint i = 0; i < voters[_to].delegates.length; i++) {
-                uint placeholder = voters[_to].votingWeight;
+                uint placeholder = balanceOf[_to];
                 address newTo = voters[_to].delegates[i];
                 uint askValue = min(_value - placeholder, voters[_to].delegatesWeight[newTo]);
                 _askBack(_to, newTo, askValue);
-                placeholder = voters[_to].votingWeight;
+                placeholder = balanceOf[_to];
                 if (_value == placeholder) { need = false; break; }
             
             }
             //condição de ja ter votado
-            //if (voters[_to].votingWeight < _value) {
-                //uint needed = _value - voters[_to].votingWeight;
+            //if (balanceOf[_to] < _value) {
+                //uint needed = _value - balanceOf[_to];
             uint proposal = initID - 1;
-            while ((_value - voters[_to].votingWeight != 0) && need) {
+            while ((_value - balanceOf[_to] > 0) && need) {
                 for (uint id = 0; id < proposals[proposal].options.length; id++) {
                     string storage selectedOption = proposals[proposal].options[id];
                     if (voters[_from].voted[selectedOption] >= 1) {
-                        undoVote(proposal, id, 1);
+                        bool bID = (id == 0) ? false : true;
+                        undoVote(proposal, bID, 1);
                     }
                 }
             }
@@ -244,10 +271,6 @@ contract Mark1 {
 
         _transferBack(_to, _from, _value);
 
-    }
-
-    function askBack(address _to, uint256 _value) public {
-        _askBack(msg.sender, _to, _value);
     }
 
 }
