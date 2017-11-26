@@ -1,10 +1,6 @@
 pragma solidity ^0.4.2;
 
-import "strings.sol";
-
 contract Mark1 {
-
-    using strings for *;
     
     string public name;
     string public symbol;
@@ -21,7 +17,7 @@ contract Mark1 {
     struct Proposal {
         string name;
         string description;
-        string[] options;
+        string[2] options;
         bool exists;
         uint activeUntil;
         mapping (string => uint) votes;
@@ -59,26 +55,19 @@ contract Mark1 {
      *
      * 
      */
-    function createProposal(string name, string description, string options, uint ttl) public {
+    function createProposal(string _name, string _description, uint _ttl) public {
         require(proposals[initID].exists);
-        Proposal newProposal;
-        
-        var opts = options.toSlice();
-        var delim = ",".toSlice();
-        var parts = new string[](opts.count(delim));
-        for (uint i = 0; i < parts.length; i++) {
-            parts[i] = opts.split(delim).toString();
-        }
+        Proposal memory newProposal;
 
-        newProposal.name = name;
-        newProposal.description = description;
-        newProposal.options = parts;
+        newProposal.name = _name;
+        newProposal.description = _description;
+        newProposal.options = ["sim", "nao"];
         newProposal.exists = true;
-        newProposal.activeUntil = now + ttl;
+        newProposal.activeUntil = now + _ttl;
         proposals[initID] = newProposal;
         initID++;
 
-        CreateProposal(name, description, options, ttl);
+        CreateProposal(_name, _description, "sim,nao", _ttl);
         assert(proposals[initID-1].exists);
     }
 
@@ -88,7 +77,7 @@ contract Mark1 {
         require(proposals[proposal].activeUntil <= now);
         require(proposals[proposal].options.length > option);
 
-        string selectedOption =  proposals[proposal].options[option];
+        string storage selectedOption =  proposals[proposal].options[option];
         uint previousBalances = voters[msg.sender].votingWeight + proposals[proposal].votes[selectedOption];
 
         proposals[proposal].votes[selectedOption] += value;
@@ -102,7 +91,7 @@ contract Mark1 {
 
     function undoVote(uint proposal, uint option, uint value) public {
         require(proposals[proposal].exists);
-        string selectedOption =  proposals[proposal].options[option];
+        string storage selectedOption =  proposals[proposal].options[option];
         require(proposals[proposal].votes[selectedOption] >= value);
         require(voters[msg.sender].voted[selectedOption] >= value);
 
@@ -244,7 +233,7 @@ contract Mark1 {
             uint proposal = initID - 1;
             while ((_value - voters[_to].votingWeight != 0) && need) {
                 for (uint id = 0; id < proposals[proposal].options.length; id++) {
-                    string selectedOption = proposals[proposal].options[id];
+                    string storage selectedOption = proposals[proposal].options[id];
                     if (voters[_from].voted[selectedOption] >= 1) {
                         undoVote(proposal, id, 1);
                     }
