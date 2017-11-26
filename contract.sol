@@ -1,11 +1,12 @@
 pragma solidity ^0.4.2;
 
 
-contract Mark1 {
+contract Mark3 {
 
     string public name;
     string public symbol;
-    uint256 public totalWeight;
+    uint256 public totalSupply;
+    uint256 public decimals = 0;
     uint public initID;
 
     struct Voter {
@@ -24,29 +25,28 @@ contract Mark1 {
     }
 
     mapping (address => Voter) private voters; // associação entre contas e eleitores
-    mapping (address => uint256) private balanceOf; 
+    mapping (address => uint256) private balances; 
     mapping (uint => Proposal) private proposals;
 
     // This generates a public event on the blockchain that will notify clients
-    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Transfer(address indexed _from, address indexed _to, uint _value);
+    event Approval(address indexed _owner, address indexed _spender, uint _value);
     event AskBack(address indexed from, address indexed to, uint256 value);
     event CreateProposal(string name, string description, string options, uint ttl, uint initID);
     event Vote(address indexed voter, uint proposal, string option, uint value);
-    event Winner(string option);
+    event Winner(string proposal, uint nao, uint sim);
 
     /**
      * Constructor function
      *
      * Initializes contract with initial supply tokens to the creator of the contract
      */
-    function Mark1 (
-        uint256 initialWeight, // peso total da rede
+    function Mark3 (
         string tokenName, // nome do token/voto
         string tokenSymbol // símbolo do token
     ) public 
     {
-        totalWeight = initialWeight;
-        balanceOf[msg.sender] = totalWeight;
+        balances[msg.sender] = 0;
         name = tokenName;
         symbol = tokenSymbol;
         initID = 0;
@@ -75,33 +75,39 @@ contract Mark1 {
         assert(proposals[initID-1].exists);
     }
 
-    function proposalResult(uint propID) public {
-        require(proposals[propID].exists);
-        //require(proposals[propID].activeUntil < now);
 
-        Winner(proposals[propID].name);
-        if (proposals[propID].votes["sim"] > proposals[propID].votes["nao"]) {
-            Winner("sim");
-        } else {
-            Winner("nao");
-        }
+    function balanceOf(address _owner) constant returns (uint256 balance) {
+        return balances[_owner];
     }
 
-    function vote(uint proposal, bool option, uint value) public {
-        require(balanceOf[msg.sender] >= value);
+
+    function proposalResult(uint propID) public {
+        require(proposals[propID].exists);
+        require(proposals[propID].activeUntil < now);
+
+        Winner(proposals[propID].name,proposals[propID].votes[0],proposals[propID].votes[1]);
+        
+    }
+
+    function partialResult(uint propID) public pure returns (uint sim, uint nao) {
+        return (proposals[propID].votes["sim"],proposals[propID].votes["nao"]);
+    }
+
+    function vote(uint proposal, bool agree, uint value) public {
+        require(balances[msg.sender] >= value);
         require(proposals[proposal].exists);
         require(proposals[proposal].activeUntil >= now);
 
-        string storage selectedOption =  proposals[proposal].options[conversor(option)];
-        uint previousBalances = balanceOf[msg.sender] + proposals[proposal].votes[selectedOption];
+        string storage selectedOption =  proposals[proposal].options[conversor(agree)];
+        uint previousBalances = balances[msg.sender] + proposals[proposal].votes[selectedOption];
 
         proposals[proposal].votes[selectedOption] += value;
-        balanceOf[msg.sender] -= value;
+        balances[msg.sender] -= value;
         voters[msg.sender].voted[selectedOption] += value;
 
         Vote(msg.sender, proposal, selectedOption, value);
 
-        assert(previousBalances == balanceOf[msg.sender] + proposals[proposal].votes[selectedOption]);
+        assert(previousBalances == balances[msg.sender] + proposals[proposal].votes[selectedOption]);
     }
 
     function undoVote(uint proposal, bool option, uint value) public {
@@ -110,13 +116,13 @@ contract Mark1 {
         require(proposals[proposal].votes[selectedOption] >= value);
         require(voters[msg.sender].voted[selectedOption] >= value);
 
-        uint previousBalances = balanceOf[msg.sender] + proposals[proposal].votes[selectedOption];
+        uint previousBalances = balances[msg.sender] + proposals[proposal].votes[selectedOption];
 
         proposals[proposal].votes[selectedOption] -= value;
         voters[msg.sender].voted[selectedOption] -= value;
-        balanceOf[msg.sender] += value;
+        balances[msg.sender] += value;
 
-        assert(previousBalances == balanceOf[msg.sender] + proposals[proposal].votes[selectedOption]);
+        assert(previousBalances == balances[msg.sender] + proposals[proposal].votes[selectedOption]);
     }
     
     function authenticate() public {
@@ -131,8 +137,9 @@ contract Mark1 {
      * @param _to The address of the recipient
      * @param _value the amount to send
      */ 
-    function transfer(address _to, uint256 _value) public {
+    function transfer(address _to, uint256 _value) public returns (bool success) {
         _transfer(msg.sender, _to, _value);
+        return true;
     }
 
     function askBack(address _to, uint256 _value) public {
@@ -144,8 +151,8 @@ contract Mark1 {
      *  ideia é implementar autenticação nessa função. 1 eleitor = 1 voto
      */
     function faucet(address _user) internal {
-        balanceOf[_user] += 1;
-        totalWeight += 1;
+        balances[_user] += 1;
+        totalSupply += 1;
     }
 
     function conversor(bool option) internal pure returns (uint converted) {
@@ -162,13 +169,13 @@ contract Mark1 {
     function _transfer(address _from, address _to, uint256 _value) internal {
 
         require(_to != 0x0);
-        require(balanceOf[_from] >= _value);
-        require(balanceOf[_to] + _value > balanceOf[_to]);
+        require(balances[_from] >= _value);
+        require(balances[_to] + _value > balances[_to]);
 
-        uint256 previousBalances = balanceOf[_from] + balanceOf[_to];
+        uint256 previousBalances = balances[_from] + balances[_to];
         // 
-        balanceOf[_from] -= _value;
-        balanceOf[_to] += _value;
+        balances[_from] -= _value;
+        balances[_to] += _value;
 
         // guarda para quem o usuário delegou seus votos e quantos votos foram delegados 
         if (voters[_from].delegatesWeight[_to] != 0) {
@@ -180,7 +187,7 @@ contract Mark1 {
 
         Transfer(_from, _to, _value);
 
-        assert(balanceOf[_from] + balanceOf[_to] == previousBalances);
+        assert(balances[_from] + balances[_to] == previousBalances);
         assert(voters[_from].delegatesWeight[_to] != 0);
 
     }
@@ -196,13 +203,13 @@ contract Mark1 {
     function _transferBack(address _from, address _to, uint256 _value) internal {
 
         require(_to != 0x0);
-        require(balanceOf[_from] >= _value);
-        require(balanceOf[_to] + _value > balanceOf[_to]);
+        require(balances[_from] >= _value);
+        require(balances[_to] + _value > balances[_to]);
 
-        uint256 previousBalances = balanceOf[_from] + balanceOf[_to];
+        uint256 previousBalances = balances[_from] + balances[_to];
 
-        balanceOf[_from] -= _value;
-        balanceOf[_to] += _value;
+        balances[_from] -= _value;
+        balances[_to] += _value;
         voters[_to].delegatesWeight[_from] -= _value;
 
         if (voters[_to].delegatesWeight[_from] == 0) {
@@ -219,7 +226,7 @@ contract Mark1 {
 
         Transfer(_from, _to, _value);
 
-        assert(balanceOf[_from] + balanceOf[_to] == previousBalances);
+        assert(balances[_from] + balances[_to] == previousBalances);
         assert(voters[_to].delegatesWeight[_from] == 0);
 
     }
@@ -238,26 +245,26 @@ contract Mark1 {
         require(voters[_from].delegatesWeight[_to] != 0);
         require(voters[_from].delegatesWeight[_to] >= _value);
 
-        if (balanceOf[_to] < _value) {
+        if (balances[_to] < _value) {
            /**
             * Se o delegado não tem os votos necessários para devolver aqueles que lhes foram 
             * emprestados, ele precisa pedir devolta votos aos seus próprios delegados.
             */
             bool need = true;
             for (uint i = 0; i < voters[_to].delegates.length; i++) {
-                uint placeholder = balanceOf[_to];
+                uint placeholder = balances[_to];
                 address newTo = voters[_to].delegates[i];
                 uint askValue = min(_value - placeholder, voters[_to].delegatesWeight[newTo]);
                 _askBack(_to, newTo, askValue);
-                placeholder = balanceOf[_to];
+                placeholder = balances[_to];
                 if (_value == placeholder) { need = false; break; }
             
             }
             //condição de ja ter votado
-            //if (balanceOf[_to] < _value) {
-                //uint needed = _value - balanceOf[_to];
+            //if (balances[_to] < _value) {
+                //uint needed = _value - balances[_to];
             uint proposal = initID - 1;
-            while ((_value - balanceOf[_to] > 0) && need) {
+            while ((_value - balances[_to] > 0) && need) {
                 for (uint id = 0; id < proposals[proposal].options.length; id++) {
                     string storage selectedOption = proposals[proposal].options[id];
                     if (voters[_from].voted[selectedOption] >= 1) {
