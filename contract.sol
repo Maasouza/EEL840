@@ -76,7 +76,7 @@ contract Mark3 {
     }
 
 
-    function balanceOf(address _owner) constant returns (uint256 balance) {
+    function balanceOf(address _owner) constant public returns (uint256 balance) {
         return balances[_owner];
     }
 
@@ -85,12 +85,12 @@ contract Mark3 {
         require(proposals[propID].exists);
         require(proposals[propID].activeUntil < now);
 
-        Winner(proposals[propID].name,proposals[propID].votes[0],proposals[propID].votes[1]);
+        Winner(proposals[propID].name,proposals[propID].votes["nao"],proposals[propID].votes["sim"]);
         
     }
 
-    function partialResult(uint propID) public pure returns (uint sim, uint nao) {
-        return (proposals[propID].votes["sim"],proposals[propID].votes["nao"]);
+    function partialResult(uint propID) public view returns (uint sim, uint nao) {
+        return (proposals[propID].votes["sim"], proposals[propID].votes["nao"]);
     }
 
     function vote(uint proposal, bool agree, uint value) public {
