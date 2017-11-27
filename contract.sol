@@ -1,7 +1,7 @@
 pragma solidity ^0.4.2;
 
 
-contract Mark3 {
+contract Mark4 {
 
     string public name;
     string public symbol;
@@ -32,8 +32,9 @@ contract Mark3 {
     event Transfer(address indexed _from, address indexed _to, uint _value);
     event Approval(address indexed _owner, address indexed _spender, uint _value);
     event AskBack(address indexed from, address indexed to, uint256 value);
-    event CreateProposal(string name, string description, string options, uint ttl, uint initID);
+    event CreateProposal(string name, string description, string options, uint minutesDuration, uint initID);
     event Vote(address indexed voter, uint proposal, string option, uint value);
+    event UndoVote(address indexed voter, uint proposal, string option, uint value);
     event Winner(string proposal, uint nao, uint sim);
 
     /**
@@ -41,7 +42,7 @@ contract Mark3 {
      *
      * Initializes contract with initial supply tokens to the creator of the contract
      */
-    function Mark3 (
+    function Mark4 (
         string tokenName, // nome do token/voto
         string tokenSymbol // símbolo do token
     ) public 
@@ -80,12 +81,19 @@ contract Mark3 {
         return balances[_owner];
     }
 
+    function describeProposal(uint propID) public view returns (string proposalName, string description, uint minutesRemaining) {
+        return (proposals[propID].name, proposals[propID].description, (now - proposals[propID].activeUntil)/60);
+    }
+
+    function delegatedVotes(address _to) public view returns (uint votes) {
+        return (voters[msg.sender].delegatesWeight[_to]);
+    }
 
     function proposalResult(uint propID) public {
         require(proposals[propID].exists);
         require(proposals[propID].activeUntil < now);
 
-        Winner(proposals[propID].name,proposals[propID].votes["nao"],proposals[propID].votes["sim"]);
+        Winner(proposals[propID].name, proposals[propID].votes["nao"], proposals[propID].votes["sim"]);
         
     }
 
@@ -110,19 +118,24 @@ contract Mark3 {
         assert(previousBalances == balances[msg.sender] + proposals[proposal].votes[selectedOption]);
     }
 
-    function undoVote(uint proposal, bool option, uint value) public {
+    function _undoVote(address from, uint proposal, bool option, uint value) internal {
         require(proposals[proposal].exists);
         string storage selectedOption =  proposals[proposal].options[conversor(option)];
         require(proposals[proposal].votes[selectedOption] >= value);
-        require(voters[msg.sender].voted[selectedOption] >= value);
+        require(voters[from].voted[selectedOption] >= value);
 
-        uint previousBalances = balances[msg.sender] + proposals[proposal].votes[selectedOption];
+        uint previousBalances = balances[from] + proposals[proposal].votes[selectedOption];
 
         proposals[proposal].votes[selectedOption] -= value;
-        voters[msg.sender].voted[selectedOption] -= value;
-        balances[msg.sender] += value;
+        voters[from].voted[selectedOption] -= value;
+        balances[from] += value;
+        string memory _selectedOption = option ? "sim" : "nao";
+        UndoVote(from, proposal, _selectedOption, value);
+        assert(previousBalances == balances[from] + proposals[proposal].votes[selectedOption]);
+    }
 
-        assert(previousBalances == balances[msg.sender] + proposals[proposal].votes[selectedOption]);
+    function undoVote(uint proposal, bool option, uint value) public {
+        _undoVote(msg.sender, proposal, option, value);
     }
     
     function authenticate() public {
@@ -250,30 +263,26 @@ contract Mark3 {
             * Se o delegado não tem os votos necessários para devolver aqueles que lhes foram 
             * emprestados, ele precisa pedir devolta votos aos seus próprios delegados.
             */
-            bool need = true;
             for (uint i = 0; i < voters[_to].delegates.length; i++) {
                 uint placeholder = balances[_to];
                 address newTo = voters[_to].delegates[i];
                 uint askValue = min(_value - placeholder, voters[_to].delegatesWeight[newTo]);
                 _askBack(_to, newTo, askValue);
                 placeholder = balances[_to];
-                if (_value == placeholder) { need = false; break; }
+                if (_value == placeholder) { break; }
             
             }
             //condição de ja ter votado
-            //if (balances[_to] < _value) {
-                //uint needed = _value - balances[_to];
-            uint proposal = initID - 1;
-            while ((_value - balances[_to] > 0) && need) {
+            uint proposal = initID - 1; // FIX
+            while (_value - balances[_to] > 0) {
                 for (uint id = 0; id < proposals[proposal].options.length; id++) {
                     string storage selectedOption = proposals[proposal].options[id];
-                    if (voters[_from].voted[selectedOption] >= 1) {
+                    if (voters[_to].voted[selectedOption] >= 1) {
                         bool bID = (id == 0) ? false : true;
-                        undoVote(proposal, bID, 1);
+                        _undoVote(_to, proposal, bID, 1);
                     }
                 }
-            }
-            //}             
+            }          
         }
 
         _transferBack(_to, _from, _value);
