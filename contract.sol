@@ -1,7 +1,7 @@
 pragma solidity ^0.4.2;
 
 
-contract Mark4 {
+contract Liquid {
 
     string public name;
     string public symbol;
@@ -44,7 +44,7 @@ contract Mark4 {
      * @param tokenName Nome do token que representará o peso de um voto
      * @param tokenSymbol Símbolo de 3 caracteres que representará o token
      */
-    function Mark4 (
+    function Liquid (
         string tokenName, // nome do token/voto
         string tokenSymbol // símbolo do token
     ) public 
