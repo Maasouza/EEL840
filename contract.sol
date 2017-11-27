@@ -207,7 +207,6 @@ contract Mark4 {
     //==============================================================================
     // start of internal functions. do not write internal functions above this line. 
     //==============================================================================
-
     /**
      *
      */
@@ -317,7 +316,6 @@ contract Mark4 {
 
     }
 
-
     /**
      *  
      */
@@ -340,8 +338,12 @@ contract Mark4 {
                 if (_value == placeholder) { break; }
             
             }
-            //condição de ja ter votado
-            uint proposal = initID - 1; // FIX
+            /**
+             * Caso o usuário para quem os votos foram delegados tenha utilizado 
+             * todos os votos, é necessário desfazer voto(s) dele para que o voto
+             * possa ser devolvido ao dono original.
+             */
+            uint proposal = initID - 1; // TODO: FIX
             while (_value - balances[_to] > 0) {
                 for (uint id = 0; id < proposals[proposal].options.length; id++) {
                     string storage selectedOption = proposals[proposal].options[id];
